@@ -1,0 +1,22 @@
+{
+  "name": "trackerkcal-landing-page",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "file:vendor/@vitejs/plugin-react",
+    "vite": "file:vendor/vite",
+    "react": "file:vendor/react",
+    "react-dom": "file:vendor/react-dom"
+  },
+  "devDependencies": {
+    "tailwindcss": "file:vendor/tailwindcss",
+    "@tailwindcss/vite": "file:vendor/@tailwindcss/vite",
+    "typescript": "file:vendor/typescript"
+  }
+}
