@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, resolve } from 'node:path';
 
@@ -8,6 +8,7 @@ const command = process.argv[2] && !process.argv[2].startsWith('-') ? process.ar
 const root = process.cwd();
 const dist = join(root, 'dist');
 const tmp = join(dist, 'assets');
+const base = '/Trackerkcal/';
 
 function runTsc() {
   const result = spawnSync('tsc', [
@@ -21,25 +22,41 @@ function runTsc() {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
+function vendorImportPath(_file, packagePath) {
+  return `${base}vendor/${packagePath}`;
+}
+
 function patchCompiledImports(file) {
   let code = readFileSync(file, 'utf8');
   code = code.replace("import './styles.css';", '');
-  code = code.replace(/from ['"]react['"]/g, "from '/vendor/react/index.js'");
-  code = code.replace(/from ['"]react\/jsx-runtime['"]/g, "from '/vendor/react/jsx-runtime.js'");
-  code = code.replace(/from ['"]react-dom\/client['"]/g, "from '/vendor/react-dom/client/index.js'");
+  code = code.replace(/from ['"]react['"]/g, `from '${vendorImportPath(file, 'react/index.js')}'`);
+  code = code.replace(/from ['"]react\/jsx-runtime['"]/g, `from '${vendorImportPath(file, 'react/jsx-runtime.js')}'`);
+  code = code.replace(/from ['"]react-dom\/client['"]/g, `from '${vendorImportPath(file, 'react-dom/client/index.js')}'`);
+  code = code.replace(/from ['"](\.{1,2}\/[^'"]+?)(?<!\.js)(?<!\.css)(?<!\.json)['"]/g, "from '$1.js'");
   writeFileSync(file, code);
+}
+
+function patchCompiledDirectory(directory) {
+  for (const entry of readdirSync(directory)) {
+    const file = join(directory, entry);
+    if (statSync(file).isDirectory()) patchCompiledDirectory(file);
+    else if (file.endsWith('.js')) patchCompiledImports(file);
+  }
 }
 
 function build() {
   rmSync(dist, { recursive: true, force: true });
   mkdirSync(tmp, { recursive: true });
   runTsc();
-  patchCompiledImports(join(tmp, 'main.js'));
+  patchCompiledDirectory(tmp);
   let html = readFileSync(join(root, 'index.html'), 'utf8')
-    .replace('<script type="module" src="/src/main.tsx"></script>', '<script src="https://cdn.tailwindcss.com"></script>\n    <link rel="stylesheet" href="/assets/styles.css" />\n    <script type="module" src="/assets/main.js"></script>');
+    .replace('<script type="module" src="/src/main.tsx"></script>', `<script src="https://cdn.tailwindcss.com"></script>\n    <link rel="stylesheet" href="${base}assets/styles.css" />\n    <script type="module" src="${base}assets/main.js"></script>`);
   writeFileSync(join(dist, 'index.html'), html);
   cpSync(join(root, 'src/styles.css'), join(tmp, 'styles.css'));
-  cpSync(join(root, 'vendor'), join(dist, 'vendor'), { recursive: true });
+  mkdirSync(join(dist, 'vendor'), { recursive: true });
+  cpSync(join(root, 'vendor/react'), join(dist, 'vendor/react'), { recursive: true });
+  cpSync(join(root, 'vendor/react-dom'), join(dist, 'vendor/react-dom'), { recursive: true });
+  writeFileSync(join(dist, '.nojekyll'), '');
   console.log('✓ built in dist/');
 }
 
@@ -53,7 +70,8 @@ function serve() {
   const port = Number(process.env.PORT || (portIndex >= 0 ? process.argv[portIndex + 1] : 5173));
   createServer((request, response) => {
     const url = new URL(request.url || '/', `http://localhost:${port}`);
-    const pathname = url.pathname === '/' ? '/index.html' : url.pathname;
+    const requestPath = url.pathname.startsWith(base) ? `/${url.pathname.slice(base.length)}` : url.pathname;
+    const pathname = requestPath === '/' ? '/index.html' : requestPath;
     const file = resolve(dist, `.${pathname}`);
     try {
       response.writeHead(200, { 'content-type': contentType(file) });
